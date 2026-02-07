@@ -3,18 +3,19 @@ using System.Security.Claims;
 
 namespace MobileAppCottage.Infrastructure.UserContext
 {
-    public class UserContext : IUserContext
+    public class UserContext(IHttpContextAccessor httpContextAccessor) : IUserContext
     {
-        private readonly IHttpContextAccessor _httpContextAccessor;
-
-        public UserContext(IHttpContextAccessor httpContextAccessor)
+        public CurrentUser? GetCurrentUser()
         {
-            _httpContextAccessor = httpContextAccessor;
-        }
+            var user = httpContextAccessor.HttpContext?.User;
 
-        public string? GetUserId()
-        {
-            return _httpContextAccessor.HttpContext?.User?.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            if (user?.Identity is null || !user.Identity.IsAuthenticated)
+                return null;
+
+            var id = user.FindFirst(ClaimTypes.NameIdentifier)?.Value;
+            var email = user.FindFirst(ClaimTypes.Email)?.Value;
+
+            return (id is null || email is null) ? null : new CurrentUser(id, email);
         }
     }
 }

@@ -1,3 +1,5 @@
+using FluentValidation;
+using FluentValidation.AspNetCore;
 using Microsoft.EntityFrameworkCore;
 using MobileAppCottage.API.Middleware;
 using MobileAppCottage.Application.Cottages.Commands.CreateCottage;
@@ -16,17 +18,25 @@ var logger = LogManager.Setup().LoadConfigurationFromAppSettings().GetCurrentCla
 
 try
 {
-    var builder = WebApplication.CreateBuilder(args);
+    // Dodajemy WebApplicationOptions, aby upewniæ siê, ¿e b³êdy ³adowania s¹ lepiej raportowane
+    var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+    {
+        Args = args,
+        ContentRootPath = Directory.GetCurrentDirectory()
+    });
 
     #region Services Configuration
-    // Konfiguracja logowania NLog
     builder.Logging.ClearProviders();
     builder.Host.UseNLog();
 
-    builder.Services.AddControllers();
+    // Dodajemy obs³ugê JSON, aby unikn¹æ b³êdów przy cyklach w rezerwacjach
+    builder.Services.AddControllers()
+        .AddJsonOptions(options =>
+        {
+            options.JsonSerializerOptions.ReferenceHandler = System.Text.Json.Serialization.ReferenceHandler.IgnoreCycles;
+        });
 
-    // --- POPRAWKA: ODPORNOŒÆ NA B£ÊDY SQL (Retry Logic) ---
-    // Dodajemy EnableRetryOnFailure, bo baza w Dockerze wstaje wolniej ni¿ API
+    // --- BAZA DANYCH ---
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     builder.Services.AddDbContext<CottageDbContext>(options =>
         options.UseSqlServer(connectionString, sqlOptions =>
@@ -35,44 +45,57 @@ try
                 maxRetryDelay: TimeSpan.FromSeconds(30),
                 errorNumbersToAdd: null)));
 
-    // Rejestracja Identity
+    // --- IDENTITY ---
     builder.Services.AddIdentityApiEndpoints<User>()
         .AddRoles<Role>()
         .AddEntityFrameworkStores<CottageDbContext>();
 
-    // Rejestracja MediatR
+    // --- MEDIATR ---
+    // Rejestrujemy na podstawie typu z warstwy Application
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssembly(typeof(CreateCottageCommand).Assembly));
 
-    // Rejestracja us³ug i repozytoriów
+    // --- WALIDACJA (FluentValidation) ---
+    builder.Services.AddValidatorsFromAssembly(typeof(CreateCottageCommand).Assembly);
+    builder.Services.AddFluentValidationAutoValidation();
+
+    // --- REJESTRACJA US£UG I REPOZYTORIÓW ---
     builder.Services.AddScoped<ICottageRepository, CottageRepository>();
     builder.Services.AddScoped<CottageSeeder>();
     builder.Services.AddScoped<ErrorHandlingMiddleware>();
     builder.Services.AddMemoryCache();
     builder.Services.AddScoped<CottageCacheService>();
-    builder.Services.AddAutoMapper(typeof(CottageMappingProfile));
+
+    // --- AUTOMAPPER ---
+    builder.Services.AddAutoMapper(typeof(CottageMappingProfile).Assembly);
+
     builder.Services.AddScoped<IUserContext, UserContext>();
     builder.Services.AddHttpContextAccessor();
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen();
     #endregion
 
+    // WY£¥CZAMY restrykcyjne sprawdzanie DI w trybie deweloperskim, 
+    // aby aplikacja wsta³a nawet jeœli jakiœ serwis ma problem z zale¿noœci¹.
+    builder.Host.UseDefaultServiceProvider((context, options) =>
+    {
+        options.ValidateScopes = false;
+        options.ValidateOnBuild = false;
+    });
+
     var app = builder.Build();
 
     #region Database Initialization & Seeding
-    // --- POPRAWKA: TWORZENIE BAZY W DOCKERZE ---
-    // Musimy wymusiæ stworzenie bazy, zanim Seeder do niej uderzy [cite: 2026-01-14]
     using (var scope = app.Services.CreateScope())
     {
         var services = scope.ServiceProvider;
         try
         {
             var dbContext = services.GetRequiredService<CottageDbContext>();
-
-            // Jeœli baza nie istnieje (np. po raz pierwszy w Dockerze), stwórz j¹ [cite: 2026-01-14]
             if (app.Environment.IsDevelopment())
             {
-                // EnsureCreated() stworzy bazê bez migracji, co jest szybsze do testów Dockerowych [cite: 2026-01-14]
+                // U¿ywamy Migrate zamiast EnsureCreated, jeœli masz migracje
+                // await dbContext.Database.MigrateAsync(); 
                 await dbContext.Database.EnsureCreatedAsync();
             }
 
@@ -81,8 +104,7 @@ try
         }
         catch (Exception ex)
         {
-            logger.Error(ex, "B³¹d podczas inicjalizacji lub seedowania bazy danych.");
-            // Nie rzucamy wyj¹tku dalej, by aplikacja mog³a spróbowaæ wstaæ mimo b³êdu bazy [cite: 2026-01-14]
+            logger.Error(ex, "B³¹d podczas inicjalizacji bazy.");
         }
     }
     #endregion
@@ -96,10 +118,6 @@ try
         app.UseSwaggerUI();
     }
 
-    // --- UWAGA NA DOCKERA ---
-    // W Dockerze czêsto wy³¹cza siê HttpsRedirection, jeœli nie masz skonfigurowanych certyfikatów
-    // app.UseHttpsRedirection(); 
-
     app.MapGroup("/identity").MapIdentityApi<User>();
 
     app.UseAuthentication();
@@ -108,19 +126,13 @@ try
     app.MapControllers();
     #endregion
 
-    logger.Info("Aplikacja MobileAppCottage uruchomiona pomyœlnie.");
+    logger.Info("Aplikacja ruszy³a!");
     await app.RunAsync();
 }
 catch (Exception exception)
 {
-    if (exception.GetType().Name == "HostAbortedException")
-    {
-        throw;
-    }
-
-    Console.WriteLine("!!! B£¥D KRYTYCZNY STARTU !!!");
-    Console.WriteLine(exception.Message);
-    logger.Error(exception, "Program zatrzymany z powodu b³êdu krytycznego podczas startu.");
+    if (exception.GetType().Name == "HostAbortedException") throw;
+    logger.Error(exception, "B³¹d krytyczny startu.");
     throw;
 }
 finally

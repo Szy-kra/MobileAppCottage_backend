@@ -1,8 +1,9 @@
 ﻿using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
-using MobileAppCottage.Domain.Entities; // To załatwia błąd z klasą User [cite: 2026-02-04]
-using System.Security.Claims; // To załatwia błąd z FindFirstValue [cite: 2026-02-04]
+using MobileAppCottage.Domain.Entities;
+using MobileAppCottage.Domain.Interfaces; // Musi być do IUserContext
+using System.Security.Claims;
 
 namespace MobileAppCottage.API.Controllers
 {
@@ -11,28 +12,24 @@ namespace MobileAppCottage.API.Controllers
     [Route("api/[controller]")]
     public class AccountController : ControllerBase
     {
-        // UserManager musi być tutaj, aby Identity wiedziało, z której tabeli czytać [cite: 2026-02-04]
         private readonly UserManager<User> _userManager;
+        private readonly IUserContext _userContext; // Dodajemy nasz kontekst
 
-        public AccountController(UserManager<User> userManager)
+        public AccountController(UserManager<User> userManager, IUserContext userContext)
         {
             _userManager = userManager;
+            _userContext = userContext;
         }
 
         [HttpGet("Profile")]
         public async Task<IActionResult> GetProfile()
         {
-            // Pobieramy ID z tokena Identity [cite: 2026-02-04]
             var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-
             if (userId == null) return Unauthorized();
 
-            // Szukamy usera w Identity EF [cite: 2026-02-04]
             var user = await _userManager.FindByIdAsync(userId);
-
             if (user == null) return NotFound();
 
-            // Sprawdzamy rolę (Host/Guest) tak jak w Twoim pomyśle z AppWeb [cite: 2026-02-04]
             var roles = await _userManager.GetRolesAsync(user);
             var userRole = roles.FirstOrDefault() ?? "Guest";
 
@@ -45,6 +42,31 @@ namespace MobileAppCottage.API.Controllers
                 taxId = user.TaxId,
                 role = userRole
             });
+        }
+
+        // --- TO JEST TA BRAKUJĄCA METODA USUWANIA ---
+        [HttpDelete("delete-account")]
+        public async Task<ActionResult> DeleteAccount()
+        {
+            // 1. Pobieramy dane zalogowanego usera z naszego nowego serwisu
+            var currentUser = _userContext.GetCurrentUser();
+
+            if (currentUser == null)
+                return Unauthorized();
+
+            // 2. Szukamy go w bazie Identity
+            var user = await _userManager.FindByIdAsync(currentUser.Id);
+
+            if (user == null)
+                return NotFound();
+
+            // 3. Usuwamy go fizycznie z bazy danych
+            var result = await _userManager.DeleteAsync(user);
+
+            if (!result.Succeeded)
+                return BadRequest("Błąd podczas usuwania konta.");
+
+            return NoContent(); // Zwraca 204 - sukces, konto skasowane
         }
     }
 }
