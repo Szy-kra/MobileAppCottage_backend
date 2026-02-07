@@ -1,5 +1,6 @@
 using FluentValidation;
 using FluentValidation.AspNetCore;
+using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using MobileAppCottage.API.Middleware;
 using MobileAppCottage.Application.Cottages.Commands.CreateCottage;
@@ -18,7 +19,6 @@ var logger = LogManager.Setup().LoadConfigurationFromAppSettings().GetCurrentCla
 
 try
 {
-    // Dodajemy WebApplicationOptions, aby upewniæ siê, ¿e b³êdy ³adowania s¹ lepiej raportowane
     var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     {
         Args = args,
@@ -29,7 +29,7 @@ try
     builder.Logging.ClearProviders();
     builder.Host.UseNLog();
 
-    // Dodajemy obs³ugê JSON, aby unikn¹æ b³êdów przy cyklach w rezerwacjach
+    // Obs³uga JSON - ignorowanie cykli (wa¿ne przy relacjach User <-> Cottage)
     builder.Services.AddControllers()
         .AddJsonOptions(options =>
         {
@@ -39,19 +39,32 @@ try
     // --- BAZA DANYCH ---
     var connectionString = builder.Configuration.GetConnectionString("DefaultConnection");
     builder.Services.AddDbContext<CottageDbContext>(options =>
-        options.UseSqlServer(connectionString, sqlOptions =>
-            sqlOptions.EnableRetryOnFailure(
-                maxRetryCount: 5,
-                maxRetryDelay: TimeSpan.FromSeconds(30),
-                errorNumbersToAdd: null)));
+        options.UseSqlServer(connectionString));
 
-    // --- IDENTITY ---
+    // --- IDENTITY CONFIGURATION ---
+    // U¿ywamy AddIdentityApiEndpoints, który generuje tokeny Bearer idealne dla React Native
     builder.Services.AddIdentityApiEndpoints<User>()
         .AddRoles<Role>()
-        .AddEntityFrameworkStores<CottageDbContext>();
+        .AddEntityFrameworkStores<CottageDbContext>()
+        .AddDefaultTokenProviders();
+
+    // Blokada b³êdu 500 przy braku serwera poczty
+    builder.Services.AddSingleton<IEmailSender<User>, NoOpEmailSender>();
+
+    builder.Services.Configure<IdentityOptions>(options =>
+    {
+        options.SignIn.RequireConfirmedAccount = false; // Nie wymagamy potwierdzenia maila
+        options.SignIn.RequireConfirmedEmail = false;
+
+        // Konfiguracja hase³ - dopasowana do Twoich testów
+        options.Password.RequireDigit = true;
+        options.Password.RequiredLength = 6;
+        options.Password.RequireNonAlphanumeric = false;
+        options.Password.RequireUppercase = false;
+        options.Password.RequireLowercase = false;
+    });
 
     // --- MEDIATR ---
-    // Rejestrujemy na podstawie typu z warstwy Application
     builder.Services.AddMediatR(cfg =>
         cfg.RegisterServicesFromAssembly(typeof(CreateCottageCommand).Assembly));
 
@@ -71,12 +84,35 @@ try
 
     builder.Services.AddScoped<IUserContext, UserContext>();
     builder.Services.AddHttpContextAccessor();
+
+    // --- SWAGGER Z OBS£UG¥ TOKENA ---
     builder.Services.AddEndpointsApiExplorer();
-    builder.Services.AddSwaggerGen();
+    builder.Services.AddSwaggerGen(c =>
+    {
+        c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "Cottage API", Version = "v1" });
+        // Dodajemy mo¿liwoœæ wklejenia tokena w Swaggerze
+        c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+        {
+            In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+            Description = "Wklej token JWT tutaj",
+            Name = "Authorization",
+            Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+            BearerFormat = "JWT",
+            Scheme = "Bearer"
+        });
+        c.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+        {
+            {
+                new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+                {
+                    Reference = new Microsoft.OpenApi.Models.OpenApiReference { Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme, Id = "Bearer" }
+                },
+                new string[] { }
+            }
+        });
+    });
     #endregion
 
-    // WY£¥CZAMY restrykcyjne sprawdzanie DI w trybie deweloperskim, 
-    // aby aplikacja wsta³a nawet jeœli jakiœ serwis ma problem z zale¿noœci¹.
     builder.Host.UseDefaultServiceProvider((context, options) =>
     {
         options.ValidateScopes = false;
@@ -85,26 +121,22 @@ try
 
     var app = builder.Build();
 
-    #region Database Initialization & Seeding
+    #region Database Initialization
     using (var scope = app.Services.CreateScope())
     {
         var services = scope.ServiceProvider;
         try
         {
             var dbContext = services.GetRequiredService<CottageDbContext>();
-            if (app.Environment.IsDevelopment())
-            {
-                // U¿ywamy Migrate zamiast EnsureCreated, jeœli masz migracje
-                // await dbContext.Database.MigrateAsync(); 
-                await dbContext.Database.EnsureCreatedAsync();
-            }
+            // Database.Migrate() by³oby lepsze, ale EnsureCreated wystarczy do Dockera
+            await dbContext.Database.EnsureCreatedAsync();
 
             var seeder = services.GetRequiredService<CottageSeeder>();
             await seeder.Seed();
         }
         catch (Exception ex)
         {
-            logger.Error(ex, "B³¹d podczas inicjalizacji bazy.");
+            logger.Error(ex, "B³¹d inicjalizacji bazy danych.");
         }
     }
     #endregion
@@ -118,6 +150,7 @@ try
         app.UseSwaggerUI();
     }
 
+    // Endpointy Identity pod /identity (login, register)
     app.MapGroup("/identity").MapIdentityApi<User>();
 
     app.UseAuthentication();
@@ -126,16 +159,24 @@ try
     app.MapControllers();
     #endregion
 
-    logger.Info("Aplikacja ruszy³a!");
+    logger.Info("Backend CottageApp gotowy do pracy!");
     await app.RunAsync();
 }
 catch (Exception exception)
 {
     if (exception.GetType().Name == "HostAbortedException") throw;
-    logger.Error(exception, "B³¹d krytyczny startu.");
+    logger.Error(exception, "Aplikacja zatrzymana przez b³¹d krytyczny.");
     throw;
 }
 finally
 {
     LogManager.Shutdown();
+}
+
+// Klasa zapobiegaj¹ca b³êdom 500 przy rejestracji
+public class NoOpEmailSender : IEmailSender<User>
+{
+    public Task SendConfirmationLinkAsync(User user, string email, string confirmationLink) => Task.CompletedTask;
+    public Task SendPasswordResetLinkAsync(User user, string email, string resetLink) => Task.CompletedTask;
+    public Task SendPasswordResetCodeAsync(User user, string email, string resetCode) => Task.CompletedTask;
 }

@@ -16,13 +16,23 @@ namespace MobileAppCottage.Infrastructure.Persistence
 
         protected override void OnModelCreating(ModelBuilder modelBuilder)
         {
+            // Bardzo ważne: wywołanie base konfiguruje tabele Identity (AspNetUsers, AspNetRoles itd.)
             base.OnModelCreating(modelBuilder);
+
+            // Konfiguracja Użytkownika - obsługa IsHost
+            modelBuilder.Entity<User>(eb =>
+            {
+                // To ustawienie sprawi, że SQL nie odrzuci zapisu, jeśli IsHost nie zostanie podane
+                eb.Property(u => u.IsHost)
+                  .HasDefaultValue(false)
+                  .IsRequired();
+            });
 
             modelBuilder.Entity<Cottage>(eb =>
             {
                 eb.Property(c => c.Name).IsRequired().HasMaxLength(50);
 
-                // Kluczowe: Description jako wymagane
+                // Description jako wymagane
                 eb.Property(c => c.Description).IsRequired();
 
                 eb.OwnsOne(c => c.ContactDetails, cd =>
@@ -32,9 +42,20 @@ namespace MobileAppCottage.Infrastructure.Persistence
                     cd.Property(p => p.Description).IsRequired(false);
                 });
 
+                // Relacja: Domek ma jednego właściciela (User), Właściciel może mieć wiele domków
                 eb.HasOne(c => c.Owner)
                   .WithMany(u => u.OwnedCottages)
-                  .HasForeignKey(c => c.OwnerId);
+                  .HasForeignKey(c => c.OwnerId)
+                  .OnDelete(DeleteBehavior.Cascade); // Usunięcie usera usuwa jego domki
+            });
+
+            modelBuilder.Entity<CottageReservation>(eb =>
+            {
+                // Relacja: Rezerwacja przypisana do usera (Gosc)
+                eb.HasOne(r => r.ReservedBy)
+                  .WithMany(u => u.Reservations)
+                  .HasForeignKey(r => r.ReservedById)
+                  .OnDelete(DeleteBehavior.Restrict); // Nie usuwamy rezerwacji przy usunięciu usera (bezpieczniej)
             });
         }
     }

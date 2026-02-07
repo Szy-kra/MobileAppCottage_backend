@@ -2,24 +2,25 @@
 
 namespace MobileAppCottage.Domain.Entities
 {
-    // Rozszerzamy standardowego użytkownika o Twoje specyficzne pola
+    // Rozszerzamy standardowego użytkownika
     public class User : IdentityUser
     {
         public string FirstName { get; set; } = string.Empty;
         public string LastName { get; set; } = string.Empty;
 
-        // --- DLA BUSINESS GUEST ---
-        // Jeśli to konto firmowe, wypełniamy te pola
+        // DODAJEMY TO: Musi pasować do kolumny w SQL
+        // Ustawienie "= false" sprawi, że SQL nie dostanie NULLa przy rejestracji
+        public bool IsHost { get; set; } = false;
+
+        // Dane firmowe (opcjonalne)
         public string? CompanyName { get; set; }
-        public string? TaxId { get; set; } // To jest Twój NIP
+        public string? TaxId { get; set; }
 
-        // --- RELACJE (Navigation Properties) ---
-
-        // Jako OWNER: Lista domków, które ten użytkownik posiada
+        // RELACJE
+        // Jako Host/Owner
         public virtual ICollection<Cottage> OwnedCottages { get; set; } = new List<Cottage>();
 
-        // Jako GUEST / BUSINESS GUEST: Lista rezerwacji, których ten użytkownik dokonał
-        // Nazwa 'Reservations' pasuje do pola 'ReservedBy' w klasie CottageReservation
+        // Jako Guest (rezerwacje)
         public virtual ICollection<CottageReservation> Reservations { get; set; } = new List<CottageReservation>();
     }
 }
