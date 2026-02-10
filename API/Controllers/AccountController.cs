@@ -1,37 +1,33 @@
-﻿using Microsoft.AspNetCore.Authorization;
+﻿using MediatR;
+using Microsoft.AspNetCore.Authorization;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.AspNetCore.Mvc;
+using MobileAppCottage.Application.CQRS.Users.Handlers;
 using MobileAppCottage.Domain.Entities;
-using MobileAppCottage.Domain.Interfaces; // Musi być do IUserContext
-using System.Security.Claims;
+using MobileAppCottage.Domain.Interfaces;
 
 namespace MobileAppCottage.API.Controllers
 {
     [Authorize]
     [ApiController]
     [Route("api/[controller]")]
-    public class AccountController : ControllerBase
+    // Używamy Primary Constructor (.NET 8) z nazwą userContext
+    public class AccountController(
+        UserManager<User> userManager,
+        IUserContext userContext,
+        IMediator mediator) : ControllerBase
     {
-        private readonly UserManager<User> _userManager;
-        private readonly IUserContext _userContext; // Dodajemy nasz kontekst
-
-        public AccountController(UserManager<User> userManager, IUserContext userContext)
-        {
-            _userManager = userManager;
-            _userContext = userContext;
-        }
-
         [HttpGet("Profile")]
         public async Task<IActionResult> GetProfile()
         {
-            var userId = User.FindFirstValue(ClaimTypes.NameIdentifier);
-            if (userId == null) return Unauthorized();
+            // Korzystamy z ujednoliconej nazwy userContext
+            var currentUser = userContext.GetCurrentUser();
+            if (currentUser == null) return Unauthorized();
 
-            var user = await _userManager.FindByIdAsync(userId);
+            var user = await userManager.FindByIdAsync(currentUser.Id);
             if (user == null) return NotFound();
 
-            var roles = await _userManager.GetRolesAsync(user);
-            var userRole = roles.FirstOrDefault() ?? "Guest";
+            var roles = await userManager.GetRolesAsync(user);
 
             return Ok(new
             {
@@ -40,33 +36,20 @@ namespace MobileAppCottage.API.Controllers
                 email = user.Email,
                 companyName = user.CompanyName,
                 taxId = user.TaxId,
-                role = userRole
+                role = roles.FirstOrDefault() ?? "User"
             });
         }
 
-        // --- TO JEST TA BRAKUJĄCA METODA USUWANIA ---
         [HttpDelete("delete-account")]
         public async Task<ActionResult> DeleteAccount()
         {
-            // 1. Pobieramy dane zalogowanego usera z naszego nowego serwisu
-            var currentUser = _userContext.GetCurrentUser();
+            var currentUser = userContext.GetCurrentUser();
+            if (currentUser == null) return Unauthorized();
 
-            if (currentUser == null)
-                return Unauthorized();
+            // Wysyłamy komendę do handlera - kontroler widzi DeleteUserCommand dzięki poprawionemu usingowi
+            await mediator.Send(new DeleteUserCommand(currentUser.Id));
 
-            // 2. Szukamy go w bazie Identity
-            var user = await _userManager.FindByIdAsync(currentUser.Id);
-
-            if (user == null)
-                return NotFound();
-
-            // 3. Usuwamy go fizycznie z bazy danych
-            var result = await _userManager.DeleteAsync(user);
-
-            if (!result.Succeeded)
-                return BadRequest("Błąd podczas usuwania konta.");
-
-            return NoContent(); // Zwraca 204 - sukces, konto skasowane
+            return NoContent();
         }
     }
 }

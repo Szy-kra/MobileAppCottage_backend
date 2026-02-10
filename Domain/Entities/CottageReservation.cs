@@ -14,30 +14,28 @@ namespace MobileAppCottage.Domain.Entities
         [ForeignKey("CottageId")]
         public virtual Cottage? Cottage { get; set; }
 
-        // ZMIANA: Nazwy zgodne z ReservationDto dla kalendarza
-        [Required(ErrorMessage = "Data rozpoczęcia jest wymagana.")]
+        [Required]
         public DateTime From { get; set; }
 
-        [Required(ErrorMessage = "Data zakończenia jest wymagana.")]
+        [Required]
         public DateTime To { get; set; }
 
-        [Required(ErrorMessage = "Nazwa klienta nie może być pusta.")]
+        public string Status { get; set; } = "Pending"; // DODANO: Naprawia CreateReservationHandler
+
+        [Required]
         public string CustomerName { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "Numer telefonu jest wymagany.")]
-        [Phone(ErrorMessage = "Niepoprawny format numeru telefonu.")]
+        [Required]
         public string CustomerPhone { get; set; } = string.Empty;
 
         public bool IsPaid { get; set; } = false;
-
-        // ZMIANA: UtcNow dla spójności czasowej [cite: 2026-01-12]
+        public bool IsCancelled { get; set; } = false;
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
         public string? ReservedById { get; set; }
-
         [ForeignKey("ReservedById")]
         public virtual User? ReservedBy { get; set; }
 
-        public bool IsForSomeoneElse { get; set; } = false;
+        public string? HostNotes { get; set; }
     }
 }

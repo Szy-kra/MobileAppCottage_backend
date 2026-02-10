@@ -5,55 +5,63 @@ using MobileAppCottage.Infrastructure.Persistence;
 
 namespace MobileAppCottage.Infrastructure.Repositories
 {
-    public class CottageRepository : ICottageRepository
+    public class CottageRepository(CottageDbContext dbContext) : ICottageRepository
     {
-        private readonly CottageDbContext _context;
-
-        public CottageRepository(CottageDbContext context)
-        {
-            _context = context;
-        }
-
         public async Task<int> Create(Cottage cottage)
         {
-            _context.Cottages.Add(cottage);
-            await _context.SaveChangesAsync();
+            dbContext.Cottages.Add(cottage);
+            await dbContext.SaveChangesAsync();
             return cottage.Id;
         }
 
         public async Task<IEnumerable<Cottage>> GetAll()
-            => await _context.Cottages
-                .Include(c => c.ContactDetails)
+            => await dbContext.Cottages
+                .Include(c => c.Images)
                 .ToListAsync();
 
         public async Task<Cottage?> GetById(int id)
-            => await _context.Cottages
-                .Include(c => c.ContactDetails)
+            => await dbContext.Cottages
+                .Include(c => c.Images)
                 .FirstOrDefaultAsync(c => c.Id == id);
 
         public async Task<Cottage?> GetByEncodedName(string encodedName)
-            => await _context.Cottages
-                .Include(c => c.ContactDetails)
+            => await dbContext.Cottages
+                .Include(c => c.Images)
                 .FirstOrDefaultAsync(c => c.EncodedName == encodedName);
 
         public async Task Update(int id, Cottage cottage)
         {
-            var existing = await GetById(id);
-            if (existing != null)
-            {
-                _context.Entry(existing).CurrentValues.SetValues(cottage);
-                await _context.SaveChangesAsync();
-            }
+            // W .NET 8, jeśli encja jest śledzona, wystarczy SaveChanges
+            await dbContext.SaveChangesAsync();
         }
 
         public async Task Delete(int id)
         {
-            var cottage = await GetById(id);
+            var cottage = await dbContext.Cottages.FindAsync(id);
             if (cottage != null)
             {
-                _context.Cottages.Remove(cottage);
-                await _context.SaveChangesAsync();
+                dbContext.Cottages.Remove(cottage);
+                await dbContext.SaveChangesAsync();
             }
+        }
+
+        // --- Metody dla zdjęć ---
+        public async Task AddImage(CottageImage image)
+        {
+            dbContext.CottageImages.Add(image);
+            await dbContext.SaveChangesAsync();
+        }
+
+        public async Task<CottageImage?> GetImageById(int imageId)
+        {
+            return await dbContext.CottageImages
+                .FirstOrDefaultAsync(i => i.Id == imageId);
+        }
+
+        public async Task DeleteImage(CottageImage image)
+        {
+            dbContext.CottageImages.Remove(image);
+            await dbContext.SaveChangesAsync();
         }
     }
 }

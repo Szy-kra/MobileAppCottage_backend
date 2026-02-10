@@ -1,4 +1,4 @@
-﻿namespace MobileAppCottage.Infrastructure.UserContext
+﻿namespace MobileAppCottage.Infrastructure.IdentityContext
 {
 
     public class CurrentUser(string id, string email)

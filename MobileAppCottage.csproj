@@ -8,9 +8,13 @@
 
   <ItemGroup>
     <Compile Remove="Application\Bookings\**" />
+    <Compile Remove="Application\CQRS\Cottages\Validators\**" />
     <Content Remove="Application\Bookings\**" />
+    <Content Remove="Application\CQRS\Cottages\Validators\**" />
     <EmbeddedResource Remove="Application\Bookings\**" />
+    <EmbeddedResource Remove="Application\CQRS\Cottages\Validators\**" />
     <None Remove="Application\Bookings\**" />
+    <None Remove="Application\CQRS\Cottages\Validators\**" />
   </ItemGroup>
 
   <ItemGroup>
@@ -30,10 +34,6 @@
     </PackageReference>
     <PackageReference Include="NLog.Web.AspNetCore" Version="6.1.0" />
     <PackageReference Include="Swashbuckle.AspNetCore" Version="6.6.2" />
-  </ItemGroup>
-
-  <ItemGroup>
-    <Folder Include="Application\Cottages\Validators\" />
   </ItemGroup>
 
 </Project>

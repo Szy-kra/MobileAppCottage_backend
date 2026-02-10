@@ -2,26 +2,32 @@
 
 namespace MobileAppCottage.Application.DTOs
 {
-    public class CreateCottageDto
+    public class CottageCreateDto
     {
-        [Required(ErrorMessage = "Pole 'Nazwa' nie może być puste.")]
-        [StringLength(100)]
+        [Required]
+        [StringLength(50)]
         public string Name { get; set; } = string.Empty;
 
-        [Required(ErrorMessage = "Opis jest wymagany.")]
-        public string Description { get; set; } = string.Empty;
+        public string? Description { get; set; }
 
-        [Required(ErrorMessage = "Maksymalna liczba osób jest wymagana.")]
-        [Range(1, 20, ErrorMessage = "Pojemność musi mieścić się w przedziale 1-20.")]
-        public int MaxPersons { get; set; }
+        [Required]
+        public ContactDetailsCreateDto ContactDetails { get; set; } = new();
+    }
 
-        [Required(ErrorMessage = "Cena jest wymagana.")]
-        [Range(0.01, 10000.00, ErrorMessage = "Cena musi być większa od 0.")]
+    public class ContactDetailsCreateDto
+    {
+        [Range(1, 10000)]
         public decimal Price { get; set; }
 
-        // Dodajemy brakujące pola, które masz w bazie:
-        public string? City { get; set; }
-        public string? Street { get; set; }
-        public string? PostalCode { get; set; }
+        [Range(1, 50)]
+        public int MaxPersons { get; set; }
+
+        [Required]
+        public string Street { get; set; } = string.Empty;
+
+        [Required]
+        public string City { get; set; } = string.Empty;
+
+        public string PostalCode { get; set; } = string.Empty;
     }
 }

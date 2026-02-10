@@ -18,6 +18,7 @@ namespace MobileAppCottage.Domain.Entities
 
         public string? About { get; set; }
 
+        // Pola ContactDetails są zmapowane jako kolumny w tej samej tabeli
         public CottageDetails ContactDetails { get; set; } = new CottageDetails();
 
         public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
@@ -27,7 +28,10 @@ namespace MobileAppCottage.Domain.Entities
         [ForeignKey("OwnerId")]
         public virtual User? Owner { get; set; }
 
+        // --- POPRAWIONE: Zmieniono z ICottageImage na CottageImage ---
+        // To powiązanie tworzy relację 1:N widoczną na diagramie
         public virtual List<CottageImage> Images { get; set; } = new List<CottageImage>();
+
         public virtual List<CottageReservation> Reservations { get; set; } = new List<CottageReservation>();
 
         public void EncodeName()

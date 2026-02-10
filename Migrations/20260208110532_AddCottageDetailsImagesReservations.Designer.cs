@@ -3,6 +3,7 @@ using System;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Infrastructure;
 using Microsoft.EntityFrameworkCore.Metadata;
+using Microsoft.EntityFrameworkCore.Migrations;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using MobileAppCottage.Infrastructure.Persistence;
 
@@ -11,9 +12,11 @@ using MobileAppCottage.Infrastructure.Persistence;
 namespace MobileAppCottage.Migrations
 {
     [DbContext(typeof(CottageDbContext))]
-    partial class CottageDbContextModelSnapshot : ModelSnapshot
+    [Migration("20260208110532_AddCottageDetailsImagesReservations")]
+    partial class AddCottageDetailsImagesReservations
     {
-        protected override void BuildModel(ModelBuilder modelBuilder)
+        /// <inheritdoc />
+        protected override void BuildTargetModel(ModelBuilder modelBuilder)
         {
 #pragma warning disable 612, 618
             modelBuilder
@@ -410,28 +413,22 @@ namespace MobileAppCottage.Migrations
                                 .HasColumnType("int");
 
                             b1.Property<string>("City")
-                                .HasColumnType("nvarchar(max)")
-                                .HasColumnName("ContactDetails_City");
+                                .HasColumnType("nvarchar(max)");
 
                             b1.Property<string>("Description")
-                                .HasColumnType("nvarchar(max)")
-                                .HasColumnName("ContactDetails_Description");
+                                .HasColumnType("nvarchar(max)");
 
                             b1.Property<int?>("MaxPersons")
-                                .HasColumnType("int")
-                                .HasColumnName("ContactDetails_MaxPersons");
+                                .HasColumnType("int");
 
                             b1.Property<string>("PostalCode")
-                                .HasColumnType("nvarchar(max)")
-                                .HasColumnName("ContactDetails_PostalCode");
+                                .HasColumnType("nvarchar(max)");
 
                             b1.Property<decimal?>("Price")
-                                .HasColumnType("decimal(18,2)")
-                                .HasColumnName("ContactDetails_Price");
+                                .HasColumnType("decimal(18,2)");
 
                             b1.Property<string>("Street")
-                                .HasColumnType("nvarchar(max)")
-                                .HasColumnName("ContactDetails_Street");
+                                .HasColumnType("nvarchar(max)");
 
                             b1.HasKey("CottageId");
 

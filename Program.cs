@@ -3,18 +3,19 @@ using FluentValidation.AspNetCore;
 using Microsoft.AspNetCore.Identity;
 using Microsoft.EntityFrameworkCore;
 using MobileAppCottage.API.Middleware;
-using MobileAppCottage.Application.Cottages.Commands.CreateCottage;
+using MobileAppCottage.Application.CQRS.Cottages.Commands;
+using MobileAppCottage.Application.CQRS.Cottages.Handlers;
 using MobileAppCottage.Application.Mappings;
 using MobileAppCottage.Application.Services;
 using MobileAppCottage.Domain.Entities;
 using MobileAppCottage.Domain.Interfaces;
 using MobileAppCottage.Infrastructure.Persistence;
 using MobileAppCottage.Infrastructure.Repositories;
+using MobileAppCottage.Infrastructure.Services;
 using MobileAppCottage.Infrastructure.UserContext;
 using NLog;
 using NLog.Web;
 
-// 1. Inicjalizacja NLoga
 var logger = LogManager.Setup().LoadConfigurationFromAppSettings().GetCurrentClassLogger();
 
 try
@@ -29,7 +30,17 @@ try
     builder.Logging.ClearProviders();
     builder.Host.UseNLog();
 
-    // Obs³uga JSON - ignorowanie cykli (wa¿ne przy relacjach User <-> Cottage)
+    // --- CORS (Kluczowe dla React Native / Frontend) ---
+    builder.Services.AddCors(options =>
+    {
+        options.AddDefaultPolicy(policy =>
+        {
+            policy.AllowAnyOrigin() // W produkcji zamieñ na konkretne adresy
+                  .AllowAnyHeader()
+                  .AllowAnyMethod();
+        });
+    });
+
     builder.Services.AddControllers()
         .AddJsonOptions(options =>
         {
@@ -42,21 +53,17 @@ try
         options.UseSqlServer(connectionString));
 
     // --- IDENTITY CONFIGURATION ---
-    // U¿ywamy AddIdentityApiEndpoints, który generuje tokeny Bearer idealne dla React Native
     builder.Services.AddIdentityApiEndpoints<User>()
         .AddRoles<Role>()
         .AddEntityFrameworkStores<CottageDbContext>()
         .AddDefaultTokenProviders();
 
-    // Blokada b³êdu 500 przy braku serwera poczty
     builder.Services.AddSingleton<IEmailSender<User>, NoOpEmailSender>();
 
     builder.Services.Configure<IdentityOptions>(options =>
     {
-        options.SignIn.RequireConfirmedAccount = false; // Nie wymagamy potwierdzenia maila
+        options.SignIn.RequireConfirmedAccount = false;
         options.SignIn.RequireConfirmedEmail = false;
-
-        // Konfiguracja hase³ - dopasowana do Twoich testów
         options.Password.RequireDigit = true;
         options.Password.RequiredLength = 6;
         options.Password.RequireNonAlphanumeric = false;
@@ -64,11 +71,11 @@ try
         options.Password.RequireLowercase = false;
     });
 
-    // --- MEDIATR ---
-    builder.Services.AddMediatR(cfg =>
-        cfg.RegisterServicesFromAssembly(typeof(CreateCottageCommand).Assembly));
+    // --- MEDIATR & AUTO-MAPPER (Wszystko z Assembly Application) ---
+    builder.Services.AddMediatR(cfg => cfg.RegisterServicesFromAssembly(typeof(UpdateCottageCommandHandler).Assembly));
+    builder.Services.AddAutoMapper(typeof(CottageMappingProfile).Assembly);
 
-    // --- WALIDACJA (FluentValidation) ---
+    // --- WALIDACJA ---
     builder.Services.AddValidatorsFromAssembly(typeof(CreateCottageCommand).Assembly);
     builder.Services.AddFluentValidationAutoValidation();
 
@@ -79,22 +86,18 @@ try
     builder.Services.AddMemoryCache();
     builder.Services.AddScoped<CottageCacheService>();
 
-    // --- AUTOMAPPER ---
-    builder.Services.AddAutoMapper(typeof(CottageMappingProfile).Assembly);
-
-    builder.Services.AddScoped<IUserContext, UserContext>();
+    builder.Services.AddScoped<IUserContext, IdentityContext>();
     builder.Services.AddHttpContextAccessor();
+    builder.Services.AddScoped<IFileService, FileService>();
 
-    // --- SWAGGER Z OBS£UG¥ TOKENA ---
     builder.Services.AddEndpointsApiExplorer();
     builder.Services.AddSwaggerGen(c =>
     {
         c.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo { Title = "Cottage API", Version = "v1" });
-        // Dodajemy mo¿liwoœæ wklejenia tokena w Swaggerze
         c.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
         {
             In = Microsoft.OpenApi.Models.ParameterLocation.Header,
-            Description = "Wklej token JWT tutaj",
+            Description = "Wklej token JWT tutaj (Bearer {token})",
             Name = "Authorization",
             Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
             BearerFormat = "JWT",
@@ -113,12 +116,6 @@ try
     });
     #endregion
 
-    builder.Host.UseDefaultServiceProvider((context, options) =>
-    {
-        options.ValidateScopes = false;
-        options.ValidateOnBuild = false;
-    });
-
     var app = builder.Build();
 
     #region Database Initialization
@@ -128,9 +125,7 @@ try
         try
         {
             var dbContext = services.GetRequiredService<CottageDbContext>();
-            // Database.Migrate() by³oby lepsze, ale EnsureCreated wystarczy do Dockera
-            await dbContext.Database.EnsureCreatedAsync();
-
+            await dbContext.Database.MigrateAsync();
             var seeder = services.GetRequiredService<CottageSeeder>();
             await seeder.Seed();
         }
@@ -144,13 +139,18 @@ try
     #region Middleware Pipeline
     app.UseMiddleware<ErrorHandlingMiddleware>();
 
+    // Obs³uga plików statycznych (zdjêcia domków)
+    app.UseStaticFiles();
+
     if (app.Environment.IsDevelopment())
     {
         app.UseSwagger();
         app.UseSwaggerUI();
     }
 
-    // Endpointy Identity pod /identity (login, register)
+    // CORS musi byæ przed Authentication/Authorization
+    app.UseCors();
+
     app.MapGroup("/identity").MapIdentityApi<User>();
 
     app.UseAuthentication();
@@ -173,7 +173,7 @@ finally
     LogManager.Shutdown();
 }
 
-// Klasa zapobiegaj¹ca b³êdom 500 przy rejestracji
+// No-Op Email Sender dla Identity API
 public class NoOpEmailSender : IEmailSender<User>
 {
     public Task SendConfirmationLinkAsync(User user, string email, string confirmationLink) => Task.CompletedTask;

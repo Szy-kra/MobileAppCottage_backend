@@ -1,4 +1,4 @@
-﻿using System.ComponentModel.DataAnnotations; // KONIECZNE, żeby uciszyć błędy
+﻿using System.ComponentModel.DataAnnotations;
 
 namespace MobileAppCottage.Application.DTOs
 {

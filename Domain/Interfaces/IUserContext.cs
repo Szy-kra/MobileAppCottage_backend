@@ -1,9 +1,10 @@
-﻿using MobileAppCottage.Infrastructure.UserContext; // <--- To naprawi błąd CS0246
-
-namespace MobileAppCottage.Domain.Interfaces
+﻿namespace MobileAppCottage.Domain.Interfaces
 {
     public interface IUserContext
     {
         CurrentUser? GetCurrentUser();
     }
+
+    // Rekord musi zawierać IsHost, bo używasz go w GetUserProfileQueryHandler
+    public record CurrentUser(string Id, string Email, bool IsHost);
 }

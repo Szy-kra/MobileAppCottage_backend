@@ -4,14 +4,19 @@ namespace MobileAppCottage.Domain.Interfaces
 {
     public interface ICottageRepository
     {
-        // Twoje działające metody
         Task<int> Create(Cottage cottage);
         Task<IEnumerable<Cottage>> GetAll();
+
+        // ZMIANA: Pobieranie domku musi teraz uwzględniać listę zdjęć
         Task<Cottage?> GetById(int id);
         Task<Cottage?> GetByEncodedName(string encodedName);
 
-        // Poprawione metody Update i Delete pod Handlery MediatR
         Task Update(int id, Cottage cottage);
         Task Delete(int id);
+
+        // --- NOWE METODY DLA ZDJĘĆ ---
+        Task AddImage(CottageImage image);
+        Task<CottageImage?> GetImageById(int imageId);
+        Task DeleteImage(CottageImage image);
     }
 }
